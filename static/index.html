@@ -552,12 +552,12 @@
   async function copyToClipboard(text, btn) {
     try {
       await navigator.clipboard.writeText(text);
-      const originalText = btn.innerHTML;
+      const originalText = btn.textContent;
       btn.classList.add('copied');
       btn.textContent = '✓ Copied!';
       setTimeout(() => {
         btn.classList.remove('copied');
-        btn.innerHTML = originalText;
+        btn.textContent = originalText;
       }, 2000);
     } catch (err) {
       prompt('Copy manually:', text);
@@ -573,7 +573,7 @@
     e.preventDefault();
     submitBtn.disabled = true;
     submitBtn.textContent = 'Shortening...';
-    resultDiv.innerHTML = '';
+    resultDiv.textContent = '';
 
     try {
       const res = await fetch('/api/links', {
@@ -588,35 +588,93 @@
 
       const data = await res.json();
       if (!res.ok) {
-        resultDiv.innerHTML = `<div class="alert alert-error">${data.error || 'Failed to create link.'}</div>`;
+        const alertEl = document.createElement('div');
+        alertEl.className = 'alert alert-error';
+        alertEl.textContent = data.error || 'Failed to create link.';
+        resultDiv.textContent = '';
+        resultDiv.appendChild(alertEl);
         return;
       }
 
       saveDeleteToken(data.code, data.delete_token);
 
-      resultDiv.innerHTML = `
-        <div class="success-box">
-          <div class="success-row">
-            <div class="success-info">
-              <div class="success-label">Shortened URL</div>
-              <div class="success-val"><a href="${data.short_url}" target="_blank" rel="noopener">${data.short_url}</a></div>
-            </div>
-            <button class="btn-copy" type="button" onclick="copyToClipboard('${data.short_url}', this)">📋 Copy Link</button>
-          </div>
-          <div class="success-row">
-            <div class="success-info">
-              <div class="success-label">Delete Token (keep secret)</div>
-              <div class="success-val">${data.delete_token}</div>
-            </div>
-            <button class="btn-copy" type="button" onclick="copyToClipboard('${data.delete_token}', this)">🔑 Copy Token</button>
-          </div>
-        </div>
-      `;
+      const successBox = document.createElement('div');
+      successBox.className = 'success-box';
+
+      // Row 1: Shortened URL
+      const row1 = document.createElement('div');
+      row1.className = 'success-row';
+
+      const info1 = document.createElement('div');
+      info1.className = 'success-info';
+
+      const label1 = document.createElement('div');
+      label1.className = 'success-label';
+      label1.textContent = 'Shortened URL';
+
+      const val1 = document.createElement('div');
+      val1.className = 'success-val';
+
+      const linkEl = document.createElement('a');
+      linkEl.href = data.short_url;
+      linkEl.target = '_blank';
+      linkEl.rel = 'noopener';
+      linkEl.textContent = data.short_url;
+
+      val1.appendChild(linkEl);
+      info1.appendChild(label1);
+      info1.appendChild(val1);
+
+      const copyBtn1 = document.createElement('button');
+      copyBtn1.className = 'btn-copy';
+      copyBtn1.type = 'button';
+      copyBtn1.textContent = '📋 Copy Link';
+      copyBtn1.addEventListener('click', () => copyToClipboard(data.short_url, copyBtn1));
+
+      row1.appendChild(info1);
+      row1.appendChild(copyBtn1);
+
+      // Row 2: Delete Token
+      const row2 = document.createElement('div');
+      row2.className = 'success-row';
+
+      const info2 = document.createElement('div');
+      info2.className = 'success-info';
+
+      const label2 = document.createElement('div');
+      label2.className = 'success-label';
+      label2.textContent = 'Delete Token (keep secret)';
+
+      const val2 = document.createElement('div');
+      val2.className = 'success-val';
+      val2.textContent = data.delete_token;
+
+      info2.appendChild(label2);
+      info2.appendChild(val2);
+
+      const copyBtn2 = document.createElement('button');
+      copyBtn2.className = 'btn-copy';
+      copyBtn2.type = 'button';
+      copyBtn2.textContent = '🔑 Copy Token';
+      copyBtn2.addEventListener('click', () => copyToClipboard(data.delete_token, copyBtn2));
+
+      row2.appendChild(info2);
+      row2.appendChild(copyBtn2);
+
+      successBox.appendChild(row1);
+      successBox.appendChild(row2);
+
+      resultDiv.textContent = '';
+      resultDiv.appendChild(successBox);
 
       form.reset();
       loadRecentLinks();
     } catch (err) {
-      resultDiv.innerHTML = `<div class="alert alert-error">Network error. Please try again.</div>`;
+      const alertEl = document.createElement('div');
+      alertEl.className = 'alert alert-error';
+      alertEl.textContent = 'Network error. Please try again.';
+      resultDiv.textContent = '';
+      resultDiv.appendChild(alertEl);
     } finally {
       submitBtn.disabled = false;
       submitBtn.textContent = 'Shorten Link';
@@ -633,33 +691,82 @@
       if (!res.ok) throw new Error('Failed to load');
       const links = await res.json();
 
+      linksList.textContent = '';
+
       if (!links || links.length === 0) {
-        linksList.innerHTML = `<div class="empty-state">No links shortened yet. Create your first link above!</div>`;
+        const emptyEl = document.createElement('div');
+        emptyEl.className = 'empty-state';
+        emptyEl.textContent = 'No links shortened yet. Create your first link above!';
+        linksList.appendChild(emptyEl);
         return;
       }
 
-      const storedTokens = getStoredTokens();
-      linksList.innerHTML = links.map(link => {
+      links.forEach(link => {
         const fullShort = window.location.origin + '/' + link.code;
-        const hasToken = Boolean(storedTokens[link.code]);
-        return `
-          <div class="link-card" id="link-card-${link.code}">
-            <div class="link-meta">
-              <div class="link-primary-line">
-                <a class="link-code" href="/${link.code}" target="_blank" rel="noopener">/${link.code}</a>
-                <span class="link-clicks">${link.clicks} ${link.clicks === 1 ? 'click' : 'clicks'}</span>
-              </div>
-              <div class="link-target" title="${link.url}">${link.url}</div>
-            </div>
-            <div class="link-actions">
-              <button class="btn-icon" type="button" title="Copy Short Link" onclick="copyToClipboard('${fullShort}', this)">📋 Copy</button>
-              <button class="btn-icon btn-delete" type="button" title="Delete Link" onclick="deleteLinkPrompt('${link.code}')">🗑️ Delete</button>
-            </div>
-          </div>
-        `;
-      }).join('');
+
+        const card = document.createElement('div');
+        card.className = 'link-card';
+        card.id = 'link-card-' + link.code;
+
+        const meta = document.createElement('div');
+        meta.className = 'link-meta';
+
+        const primaryLine = document.createElement('div');
+        primaryLine.className = 'link-primary-line';
+
+        const codeLink = document.createElement('a');
+        codeLink.className = 'link-code';
+        codeLink.href = '/' + encodeURIComponent(link.code);
+        codeLink.target = '_blank';
+        codeLink.rel = 'noopener';
+        codeLink.textContent = '/' + link.code;
+
+        const clicksSpan = document.createElement('span');
+        clicksSpan.className = 'link-clicks';
+        clicksSpan.textContent = link.clicks + (link.clicks === 1 ? ' click' : ' clicks');
+
+        primaryLine.appendChild(codeLink);
+        primaryLine.appendChild(clicksSpan);
+
+        const targetDiv = document.createElement('div');
+        targetDiv.className = 'link-target';
+        targetDiv.title = link.url;
+        targetDiv.textContent = link.url;
+
+        meta.appendChild(primaryLine);
+        meta.appendChild(targetDiv);
+
+        const actions = document.createElement('div');
+        actions.className = 'link-actions';
+
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'btn-icon';
+        copyBtn.type = 'button';
+        copyBtn.title = 'Copy Short Link';
+        copyBtn.textContent = '📋 Copy';
+        copyBtn.addEventListener('click', () => copyToClipboard(fullShort, copyBtn));
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'btn-icon btn-delete';
+        deleteBtn.type = 'button';
+        deleteBtn.title = 'Delete Link';
+        deleteBtn.textContent = '🗑️ Delete';
+        deleteBtn.addEventListener('click', () => deleteLinkPrompt(link.code));
+
+        actions.appendChild(copyBtn);
+        actions.appendChild(deleteBtn);
+
+        card.appendChild(meta);
+        card.appendChild(actions);
+
+        linksList.appendChild(card);
+      });
     } catch (err) {
-      linksList.innerHTML = `<div class="empty-state">Could not load recent links.</div>`;
+      const errorEl = document.createElement('div');
+      errorEl.className = 'empty-state';
+      errorEl.textContent = 'Could not load recent links.';
+      linksList.textContent = '';
+      linksList.appendChild(errorEl);
     }
   }
 
