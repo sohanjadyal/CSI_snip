@@ -33,6 +33,7 @@ curl -i localhost:8080/godev
 - Only `http://` and `https://` URLs are accepted. Anything else is a `400`.
 - A URL typed without a scheme, like `google.com`, gets `https://` added.
 - Custom aliases are 3 to 20 letters, digits, `-` or `_`. A taken alias is a `409`.
+- Reserved names (`api`, `static`, `health`, `robots`, `favicon`) cannot be used as custom aliases and return a `400`.
 - A code that doesn't exist is a `404`.
 - A link with an expiry works until it expires, then returns `410`.
 - Each visit to `GET /{code}` counts as one click.

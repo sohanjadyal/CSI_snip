@@ -538,3 +538,59 @@ func TestConcurrentFollowAndDelete(t *testing.T) {
 		t.Fatalf("after delete: got status %d, want 404", rec.Code)
 	}
 }
+
+func TestReservedAliasesRejected(t *testing.T) {
+	srv := NewServer(t.TempDir() + "/links.json")
+	defer srv.store.Close()
+
+	reservedCases := []string{
+		"api", "API", "Api",
+		"static", "STATIC", "Static",
+		"health", "HEALTH", "Health",
+		"robots", "ROBOTS", "Robots",
+		"favicon", "FAVICON", "Favicon",
+	}
+
+	for _, alias := range reservedCases {
+		body := `{"url": "https://go.dev", "alias": "` + alias + `"}`
+		rec := do(t, srv, "POST", "/api/links", body)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("alias %q: got status %d, want 400", alias, rec.Code)
+		}
+
+		var errResp map[string]string
+		if err := json.Unmarshal(rec.Body.Bytes(), &errResp); err != nil {
+			t.Errorf("alias %q: failed to decode response: %v", alias, err)
+		} else if errResp["error"] != "That custom name is reserved." {
+			t.Errorf("alias %q: got error %q, want %q", alias, errResp["error"], "That custom name is reserved.")
+		}
+
+		// Ensure the reserved name was not stored in links
+		if link := srv.store.Get(alias); link != nil {
+			t.Errorf("alias %q should not be stored, found: %+v", alias, link)
+		}
+	}
+}
+
+func TestReservedAliasSubstringsAllowed(t *testing.T) {
+	srv := NewServer(t.TempDir() + "/links.json")
+	defer srv.store.Close()
+
+	allowedCases := []string{
+		"api-v1", "my-static", "healthcheck", "robots-txt", "favicon-32",
+	}
+
+	for _, alias := range allowedCases {
+		body := `{"url": "https://go.dev", "alias": "` + alias + `"}`
+		link := create(t, srv, body)
+		if link["code"] != alias {
+			t.Errorf("got code %v, want %q", link["code"], alias)
+		}
+
+		rec := do(t, srv, "GET", "/"+alias, "")
+		if rec.Code != http.StatusFound || rec.Header().Get("Location") != "https://go.dev" {
+			t.Errorf("alias %q: got %d to %q, want 302 to https://go.dev", alias, rec.Code, rec.Header().Get("Location"))
+		}
+	}
+}
+

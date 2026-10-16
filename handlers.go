@@ -86,9 +86,15 @@ func (s *Server) createLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Alias != "" && !validAlias(req.Alias) {
-		writeError(w, http.StatusBadRequest, "Custom names must be 3-20 letters, numbers, - or _.")
-		return
+	if req.Alias != "" {
+		if isReservedAlias(req.Alias) {
+			writeError(w, http.StatusBadRequest, "That custom name is reserved.")
+			return
+		}
+		if !validAlias(req.Alias) {
+			writeError(w, http.StatusBadRequest, "Custom names must be 3-20 letters, numbers, - or _.")
+			return
+		}
 	}
 
 	link := &Link{
@@ -112,7 +118,7 @@ func (s *Server) createLink(w http.ResponseWriter, r *http.Request) {
 	} else {
 		for {
 			link.Code = randomString(codeChars, 6)
-			if s.store.Create(link) {
+			if !isReservedAlias(link.Code) && s.store.Create(link) {
 				break
 			}
 		}

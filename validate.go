@@ -43,6 +43,20 @@ func validURL(raw string) bool {
 	return (u.Scheme == "http" || u.Scheme == "https") && u.Hostname() != ""
 }
 
-func validAlias(alias string) bool {
-	return aliasPattern.MatchString(alias)
+var reservedAliases = map[string]struct{}{
+	"api":     {},
+	"static":  {},
+	"health":  {},
+	"robots":  {},
+	"favicon": {},
 }
+
+func isReservedAlias(alias string) bool {
+	_, ok := reservedAliases[strings.ToLower(alias)]
+	return ok
+}
+
+func validAlias(alias string) bool {
+	return aliasPattern.MatchString(alias) && !isReservedAlias(alias)
+}
+

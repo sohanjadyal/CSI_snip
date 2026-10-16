@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -143,3 +144,73 @@ func TestStoreCreateIsAtomic(t *testing.T) {
 		t.Fatalf("a refused Create overwrote the stored link: %+v", got)
 	}
 }
+
+// Many concurrent clients attempt to claim reserved route names as custom
+// aliases. All requests must be rejected with 400 Bad Request, none may
+// succeed or conflict (0 201s, 0 409s), and the alias must never be stored.
+func TestConcurrentCreatesReservedAliases(t *testing.T) {
+	srv := NewServer(t.TempDir() + "/links.json")
+	defer srv.store.Close()
+
+	reservedNames := []string{"api", "static", "health", "robots", "favicon"}
+	const clients = 32
+
+	for _, name := range reservedNames {
+		type result struct {
+			status int
+			err    string
+		}
+		results := make([]result, clients)
+
+		start := make(chan struct{})
+		var ready, done sync.WaitGroup
+		ready.Add(clients)
+		done.Add(clients)
+
+		for i := 0; i < clients; i++ {
+			go func(i int) {
+				defer done.Done()
+				alias := name
+				switch i % 3 {
+				case 1:
+					alias = strings.ToUpper(name)
+				case 2:
+					alias = strings.ToUpper(name[:1]) + strings.ToLower(name[1:])
+				}
+				url := fmt.Sprintf("https://example.com/%s/%d", name, i)
+				body := fmt.Sprintf(`{"url": %q, "alias": %q}`, url, alias)
+				ready.Done()
+				<-start // release every client simultaneously
+				rec := do(t, srv, "POST", "/api/links", body)
+				var errResp map[string]string
+				json.Unmarshal(rec.Body.Bytes(), &errResp)
+				results[i] = result{status: rec.Code, err: errResp["error"]}
+			}(i)
+		}
+
+		ready.Wait()
+		close(start)
+		done.Wait()
+
+		for i, r := range results {
+			if r.status != http.StatusBadRequest {
+				t.Fatalf("alias %q, client %d: got status %d, want 400", name, i, r.status)
+			}
+			if r.err != "That custom name is reserved." {
+				t.Fatalf("alias %q, client %d: got error %q, want %q", name, i, r.err, "That custom name is reserved.")
+			}
+		}
+
+		// Ensure nothing was saved in the store under this code
+		if link := srv.store.Get(name); link != nil {
+			t.Fatalf("alias %q was stored: %+v", name, link)
+		}
+	}
+
+	// Verify that system routes (e.g., GET /api/links) are completely unaffected
+	rec := do(t, srv, "GET", "/api/links", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/links got %d, want 200", rec.Code)
+	}
+}
+
